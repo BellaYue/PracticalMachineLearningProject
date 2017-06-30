@@ -1,0 +1,149 @@
+---
+title: "Practical machine learning project"
+author: "Yue Dai"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  warning=FALSE, message=FALSE, fig.width=10, fig.height=5)
+```
+
+## Exexutive Summary
+
+The data of the project is collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. This project is to predict the manner in which 6 participants did the exercise. This is the "classe" variable in the training set. The machine learning algorithm described here is applied to the 20 test cases available in the test data.The data for this project come from [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har).
+. 
+The content of the project includes several parts:
+
+   1. Load the data and preprocess the data
+   2. Perform basic exploratory data analysis
+   3. Select machine learning algorithm 
+   4. Exam the selected model to define the best one
+   
+## Exporatory Data Analysis  
+
+1) Load the necessary libraries
+
+```{r}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+set.seed(2017)
+```
+
+2) Load and clean data
+
+```{r, echo=TRUE}
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+dim(training) # Display the information of the data
+## head(training) 
+```
+
+The training dataset has 19622 observations and 160 variables, and the testing data set contains 20 observations and the same variables as the training set. But there is a lot of missing value (NA), so we delete those columns in the training and testing data set. 
+
+```{r, echo=TRUE}
+# remove variable with missing values
+training <- training[, colSums(is.na(training)) == 0]
+
+# remove variavle with Nearly Zero Variance
+NZV <- nearZeroVar(training)
+training <- training[, -NZV]
+dim(training)
+```
+
+We also remove the participant names and the time related data, because we won't use them.
+
+```{r, echo=TRUE}
+training <- training[, -(1:5)]
+dim(training) 
+```
+
+With the cleaning process above, the number of variables for the analysis has been reduced to 54.
+
+3) Split the traning dataset
+
+The training dataset is then partitioned in two parts: a Training set (70% of the data) and a Test set (with the remaining 30%) for the validations. The original testing dataset is not changed and will only be used for the quiz results generation.
+
+```{r, echo=TRUE}
+set.seed(0629)
+inTrain <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+```
+
+4) Analyze correlation
+
+```{r, echo=TRUE}
+cormatrix <- cor(training[, -54])
+corrplot(cormatrix, order = "FPC", method = "color", type = "lower",
+         tl.cex = 0.5, tl.col = rgb(0,0,0))
+```
+
+The dark colors indicates the high correlation variables. As the analyzing plot shown, the correlations are few. We can go further to select models.
+
+## Prediction model selection
+
+In order to avoid overfitting and to reduce out of sample errors, TrainControl is used to perform 3-fold cross validation. We use **SVM** ("svmRadial"), **Boosted Tree** ("gbm")and **Random Forests** ("rf") to predict the outcome.
+
+```{r, echo=TRUE}
+ctrl <- trainControl(method = "cv", number = 3)
+library(kernlab)
+modSVM <- train(classe ~ ., data = TrainSet, method = "svmRadial", 
+                   trControl = ctrl)
+print(modSVM, digits = 4)
+```
+
+
+```{r, echo=TRUE}
+library(gbm)
+library(survival)
+library(plyr)
+library(splines)
+library(parallel)
+modGBM <- train(classe ~ ., data = TrainSet, method = "gbm", 
+                verbose=FALSE, trControl = ctrl)
+print(modGBM, digits = 4)
+```
+
+```{r, echo=TRUE}
+modRF <- train(classe ~ ., data = TrainSet, method = "rf", 
+                   trControl = ctrl)
+print(modRF, digits = 4)
+```
+
+## Prediction model analysis
+
+```{r, echo=TRUE}
+predSVM <- predict(modSVM, TestSet)
+predGBM <- predict(modGBM, TestSet)
+predRF <- predict(modRF, TestSet)
+```
+
+```{r, echo=TRUE}
+PredictionModel <- c("SVM", "GBM", "RF")
+c2 <- confusionMatrix(TestSet$classe, predSVM)$overal[1]
+c3 <- confusionMatrix(TestSet$classe, predGBM)$overall[1]
+c4 <- confusionMatrix(TestSet$classe, predRF)$overall[1]
+Accuracy <- c(c2, c3,c4)
+df <- data.frame(PredictionModel, Accuracy) 
+df
+```
+
+## Prediction on testing dataset
+
+We choose the Random Forest model to predict the testing dataset as shown below.
+
+```{r, echo=TRUE}
+predtest <- predict(modRF, testing)
+predtest
+```
+
